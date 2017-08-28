@@ -15,33 +15,51 @@ import (
 	"github.com/urfave/cli"
 )
 
+// Project : Project Struct
+type Project struct {
+	ConsumerKey       string
+	ConsumerSecret    string
+	AccessToken       string
+	AccessTokenSecret string
+	CSV               string
+	Output            string
+	Column            int
+	Block             bool
+	NoPrompt          bool
+	Debug             bool
+}
+
 func main() {
 	app := cli.NewApp()
 	app.Name = "twreport"
 	app.Version = "0.0.2"
-	app.Usage = "Batch Report / Block Abusive Accounts on Twitter"
+	app.Usage = "Batch report / block abusive accounts on Twitter"
 
 	app.Commands = []cli.Command{
 		{
 			Name:   "report",
-			Usage:  "Batch Report / Block Abusive Accounts from a csv file",
+			Usage:  "Batch report / block abusive accounts from a csv file",
 			Action: Report,
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:  "csv",
-					Usage: "Path to your csv `FILE`",
+					Usage: "Path to input csv `FILE` (eg. ~/Desktop/block-users.csv)",
+				},
+				cli.StringFlag{
+					Name:  "out",
+					Usage: "Path to output csv `FILE` (eg. ~/Desktop/blocked-users.csv)",
 				},
 				cli.IntFlag{
 					Name:  "column",
-					Usage: "Screen Name Column",
+					Usage: "screen_name column",
 				},
 				cli.BoolFlag{
 					Name:  "block",
-					Usage: "Block Users",
+					Usage: "Block accounts (default: false)",
 				},
 				cli.BoolFlag{
-					Name:  "prompt",
-					Usage: "Ask Before Reporting",
+					Name:  "no-prompt",
+					Usage: "Skip confirmation step (default: false)",
 				},
 
 				cli.StringFlag{
@@ -60,6 +78,25 @@ func main() {
 					Name:  "access-token-secret",
 					Usage: "Twitter Access Secret",
 				},
+
+				cli.BoolFlag{
+					Name:  "debug",
+					Usage: "Will not perform the reporting action (default: false)",
+				},
+			},
+		},
+		{
+			Name:  "merge",
+			Usage: "Remove reported / blocked accounts from original csv file",
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "csv",
+					Usage: "Path to input csv `FILE` (eg. ~/Desktop/block-users.csv)",
+				},
+				cli.StringFlag{
+					Name:  "out",
+					Usage: "Path to output csv `FILE` (eg. ~/Desktop/blocked-users.csv)",
+				},
 			},
 		},
 	}
@@ -69,26 +106,27 @@ func main() {
 // Report : Report Command
 func Report(c *cli.Context) error {
 	now := time.Now()
-	// Read the flags
-	project := &Project{}
-	project.CSV = c.String("csv")
-	project.Column = c.Int("column")
-	project.Block = c.BoolT("block")
-	project.Prompt = c.BoolT("prompt")
-	project.ConsumerKey = c.String("consumer-key")
-	project.ConsumerSecret = c.String("consumer-secret")
-	project.AccessToken = c.String("access-token")
-	project.AccessTokenSecret = c.String("access-token-secret")
-
+	// Assign the flags to Project Struct
+	project := &Project{
+		CSV:               c.String("csv"),
+		Output:            c.String("out"),
+		Column:            c.Int("column"),
+		Block:             c.Bool("block"),
+		NoPrompt:          c.Bool("no-prompt"),
+		ConsumerKey:       c.String("consumer-key"),
+		ConsumerSecret:    c.String("consumer-secret"),
+		AccessToken:       c.String("access-token"),
+		AccessTokenSecret: c.String("access-token-secret"),
+		Debug:             c.Bool("debug"),
+	}
 	// Twitter API
 	anaconda.SetConsumerKey(project.ConsumerKey)
 	anaconda.SetConsumerSecret(project.ConsumerSecret)
 	api := anaconda.NewTwitterApi(project.AccessToken, project.AccessTokenSecret)
 
 	// Verify Twitter Credentials
-	_, err := api.VerifyCredentials()
-	if err != nil {
-		fmt.Printf("%s. Please refer to %s for your Access Tokens.\n", "Bad Authorization Tokens", "https://apps.twitter.com/")
+	if _, err := api.VerifyCredentials(); err != nil {
+		fmt.Printf("Bad Authorization Tokens. Please refer to https://apps.twitter.com/ for your Access Tokens.\n")
 		return nil
 	}
 
@@ -106,7 +144,10 @@ func Report(c *cli.Context) error {
 
 	// Create an Output File
 	// This is usefull for keeping a log of users that you allready reported/blocked
-	output, err := os.OpenFile("./twreport-"+strconv.FormatInt(now.Unix(), 6)+".csv", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	if project.Output == "" {
+		project.Output = "./twreport-" + strconv.FormatInt(now.Unix(), 6) + ".csv"
+	}
+	output, err := os.OpenFile(project.Output, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return nil
@@ -129,29 +170,23 @@ func Report(c *cli.Context) error {
 		}
 		for j, field := range record {
 			if j == project.Column {
-				v := url.Values{}
-				v.Set("perform_block", strconv.FormatBool(project.Block))
-				if project.Prompt {
+				if !project.NoPrompt {
 					fmt.Printf("WARNING: Are you sure you want to report user `%s`? (y/n): ", field)
 					if PromptConfirm() {
-						_, err := api.PostUsersReportSpam(field, v)
-						if err != nil {
-							fmt.Printf("You are over the limit for spam reports. Sleeping for 15'.\n")
-							Sleep()
+						if !project.Debug {
+							user := ReportSpam(api, project, field)
+							fmt.Printf("User %s Reported (Blocked: %v).\n", user.ScreenName, project.Block)
+							writer.Write([]string{user.ScreenName, "true", strconv.FormatBool(project.Block)})
+							writer.Flush()
 						}
-						fmt.Printf("User %s Reported (Blocked: %v).\n", field, project.Block)
-						writer.Write([]string{field, "true", strconv.FormatBool(project.Block)})
-						writer.Flush()
 					}
 				} else {
-					_, err := api.PostUsersReportSpam(field, v)
-					if err != nil {
-						fmt.Printf("You are over the limit for spam reports. Sleeping for 15'.\n")
-						Sleep()
+					if !project.Debug {
+						user := ReportSpam(api, project, field)
+						fmt.Printf("User %s Reported (Blocked: %v).\n", user.ScreenName, project.Block)
+						writer.Write([]string{user.ScreenName, "true", strconv.FormatBool(project.Block)})
+						writer.Flush()
 					}
-					fmt.Printf("User %s Reported (Blocked: %v).\n", field, project.Block)
-					writer.Write([]string{field, "true", strconv.FormatBool(project.Block)})
-					writer.Flush()
 				}
 			}
 		}
@@ -160,16 +195,20 @@ func Report(c *cli.Context) error {
 	return nil
 }
 
-// Project : Struct
-type Project struct {
-	ConsumerKey       string `yaml:"consumer-key"`
-	ConsumerSecret    string `yaml:"consumer-secret"`
-	AccessToken       string `yaml:"access-token"`
-	AccessTokenSecret string `yaml:"access-token-secret"`
-	CSV               string `yaml:"csv"`
-	Column            int    `yaml:"column"`
-	Block             bool   `yaml:"block"`
-	Prompt            bool   `yaml:"prompt"`
+// ReportSpam ...
+func ReportSpam(api *anaconda.TwitterApi, p *Project, screenName string) anaconda.User {
+	v := url.Values{}
+	v.Set("perform_block", strconv.FormatBool(p.Block))
+
+	res, err := api.PostUsersReportSpam(screenName, v)
+	if err != nil {
+		fmt.Printf("You are over the limit for spam reports. Sleeping for 15'.\n")
+		Sleep()
+
+		return ReportSpam(api, p, screenName)
+	}
+
+	return res
 }
 
 // PromptConfirm : Prompt for Confirmation
