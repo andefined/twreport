@@ -29,6 +29,6 @@ bin/*
 
 tmp
 *.tmp
-vendor
+vendor/*/
 
 *.csv

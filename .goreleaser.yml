@@ -1,0 +1,14 @@
+project_name: twreport
+builds:
+    - main: twreport.go
+      binary: twreport
+      goos:
+        - windows
+        - darwin
+        - linux
+      goarch:
+        - amd64
+archive:
+    format: tar.gz
+release:
+    draft: false
