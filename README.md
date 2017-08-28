@@ -9,7 +9,7 @@
 A simple CLI for batch reporting / blocking abusive accounts on Twitter.
 
 ## Installation
-You can download the binaries from the [releases](/releases) section, or you can install it with Go.
+You can download the binaries from the [releases](https://github.com/andefined/twreport/releases) section, or you can install it with Go.
 
 ```bash
 go get -u github.com/andefined/twreport
