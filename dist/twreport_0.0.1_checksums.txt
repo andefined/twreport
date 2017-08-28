@@ -1,3 +1,0 @@
-f6dddcf31021e23f698e317328dd89def77ee59179b6c672cedb1ef93faeb03c  twreport_0.0.1_windows_amd64.tar.gz
-5270227188306fba3ec4bf175b190dacd694c7ef21fc5ebe12c51dafab13e117  twreport_0.0.1_linux_amd64.tar.gz
-9b0b682325ed3e59d5e70dedb271da98b69b3a7df587ca4678a7b4ad9485d61c  twreport_0.0.1_darwin_amd64.tar.gz

@@ -30,4 +30,4 @@ bin/*
 tmp
 *.tmp
 vendor/*/
-dist/
+dist
